@@ -1,0 +1,18 @@
+namespace AssetManager.Migrations
+{
+    using System;
+    using System.Data.Entity.Migrations;
+    
+    public partial class AddOrderDiscount : DbMigration
+    {
+        public override void Up()
+        {
+            AddColumn("dbo.Order", "Discount", c => c.Decimal(precision: 18, scale: 8));
+        }
+        
+        public override void Down()
+        {
+            DropColumn("dbo.Order", "Discount");
+        }
+    }
+}

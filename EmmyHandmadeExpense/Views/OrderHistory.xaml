@@ -1,0 +1,36 @@
+﻿<Window x:Class="AssetManager.Views.OrderHistory"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:AssetManager.Views"
+        mc:Ignorable="d"
+        Title="Order History" Height="400" Width="500"
+        xmlns:vm="clr-namespace:AssetManager.ViewModels"
+        d:DataContext="{d:DesignInstance Type=vm:OrderHistoryViewModel}"
+        Icon="/AssetManager;component/Assets/Custom-Icon-Design-Pretty-Office-3-Product-sales-report.ico">
+    <Grid>
+        <DataGrid AutoGenerateColumns="False" IsReadOnly="True" ItemsSource="{Binding Items}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Source" Binding="{Binding Source}"/>
+                <DataGridTextColumn Header="Order Date" Binding="{Binding OrderDate, StringFormat=d}"/>
+                <DataGridTextColumn Header="Receipt Date" Binding="{Binding ReceiptDate, StringFormat=d}"/>
+                <DataGridTextColumn Header="# Items" Binding="{Binding OrderedItems}"/>
+                <DataGridTextColumn Header="TotalCost" Binding="{Binding TotalCost, StringFormat=N2}"/>
+                <DataGridTemplateColumn>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="View / Edit" DataContext="{Binding}" Click="ViewEditButton_Click"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <Grid Grid.ColumnSpan="99" Grid.RowSpan="99" Background="Gray" Opacity="0.6"
+              Visibility="{Binding IsInitializing, Converter={StaticResource BoolToVisConverter}}" />
+        <TextBlock Grid.ColumnSpan="99" Grid.RowSpan="99" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   FontSize="24" FontStyle="Oblique" FontWeight="Bold" Text="Loading..."
+                   Visibility="{Binding IsInitializing, Converter={StaticResource BoolToVisConverter}}"/>
+    </Grid>
+</Window>

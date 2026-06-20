@@ -1,0 +1,77 @@
+﻿<Window x:Class="AssetManager.Views.CreateItem"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:AssetManager.Views"
+        xmlns:vmd="clr-namespace:AssetManager.Data"
+        mc:Ignorable="d"
+        Title="Create Item" Height="150" Width="420" ResizeMode="NoResize"
+        d:DataContext="{d:DesignInstance Type=vmd:InventoryItem}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="1*"/>
+        </Grid.RowDefinitions>
+        <Grid.Resources>
+            <Style TargetType="TextBlock">
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Setter Property="Margin" Value="2"/>
+            </Style>
+        </Grid.Resources>
+
+        <Grid Grid.Row="0" Margin="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="1*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="1*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Name"/>
+            <TextBox Grid.Row="0" Grid.Column="1" MinWidth="150" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+
+            <TextBlock Grid.Row="0" Grid.Column="3" Text="Units"/>
+            <ComboBox Grid.Row="0" Grid.Column="4" ItemsSource="{Binding Units, Source={StaticResource UnitLookup}}"
+                      DisplayMemberPath="Value" SelectedValuePath="Key" SelectedValue="{Binding UnitOfMeasureId, UpdateSourceTrigger=PropertyChanged}"/>
+
+            <CheckBox Grid.RowSpan="2" Grid.Column="6" Content="Use for % of Batch" VerticalAlignment="Center" IsChecked="{Binding IsPercentBatchOil, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+        </Grid>
+        <Grid Grid.Row="1" Margin="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="1*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0" Text="Alternate Units"/>
+            <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding NullableUnits, Source={StaticResource UnitLookup}}"
+                      DisplayMemberPath="Value" SelectedValuePath="Key" SelectedValue="{Binding AlternateUnitOfMeasureId, UpdateSourceTrigger=PropertyChanged}"/>
+
+            <TextBlock Grid.Column="3" Text="Conversion Factor"/>
+            <TextBox Grid.Column="4" MinWidth="100" Text="{Binding AlternateUnitOfMeasureFactor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, TargetNullValue='', StringFormat=0.0#######}"/>
+        </Grid>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="1*"/>
+                <RowDefinition Height="1*"/>
+            </Grid.RowDefinitions>
+
+            <TextBox Grid.RowSpan="99" Grid.Column="0" Foreground="Red" Name="ErrorLabel" TextWrapping="Wrap" Margin="2"
+                     IsReadOnly="True" VerticalScrollBarVisibility="Auto"/>
+            <Button Grid.Row="0" Grid.Column="1" Content="Save" Width="80" Margin="2" Click="SaveButton_Click"/>
+            <Button Grid.Row="1" Grid.Column="1" Content="Cancel" Width="80" Margin="2" Click="CancelButton_Click"/>
+        </Grid>
+    </Grid>
+</Window>

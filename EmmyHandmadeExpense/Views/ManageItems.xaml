@@ -1,0 +1,48 @@
+﻿<Window x:Class="AssetManager.Views.ManageItems"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:i="http://schemas.microsoft.com/expression/2010/interactivity"
+        xmlns:local="clr-namespace:AssetManager.Views"
+        xmlns:helpers="clr-namespace:AssetManager.Helpers"
+        xmlns:uc="clr-namespace:AssetManager.Views.UserControls"
+        mc:Ignorable="d"
+        Title="ManageItems" Height="600" Width="600"
+        xmlns:vm="clr-namespace:AssetManager.ViewModels"
+        d:DataContext="{d:DesignInstance Type=vm:ManageItemsViewModel}"
+        Icon="/AssetManager;component/Assets/Custom-Icon-Design-Pretty-Office-3-Item-configuration.ico">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="1*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <DataGrid Grid.Row="0" AutoGenerateColumns="False" ItemsSource="{Binding Items}" CanUserDeleteRows="False" VerticalScrollBarVisibility="Visible">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Item ID" Binding="{Binding Id, Mode=OneWay}" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Item Name" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" MinWidth="200"/>
+                <DataGridComboBoxColumn Header="Units" ItemsSource="{Binding Units, Source={StaticResource UnitLookup}}"
+                                        DisplayMemberPath="Value" SelectedValuePath="Key" MinWidth="80"
+                                        SelectedValueBinding="{Binding UnitOfMeasureId, UpdateSourceTrigger=PropertyChanged}"/>
+                <DataGridComboBoxColumn Header="Alternate&#x0a;Units" ItemsSource="{Binding NullableUnits, Source={StaticResource UnitLookup}}"
+                                        DisplayMemberPath="Value" SelectedValuePath="Key" MinWidth="80"
+                                        SelectedValueBinding="{Binding AlternateUnitOfMeasureId, UpdateSourceTrigger=PropertyChanged}"/>
+                <uc:DataGridDecimalColumn Header="Conversion&#x0a;Factor" MinWidth="80"
+                                          Binding="{Binding AlternateUnitOfMeasureFactor, StringFormat=0.0#########, TargetNullValue=''}"/>
+                <DataGridCheckBoxColumn Header="Use For&#x0a;% of Batch" Binding="{Binding IsPercentBatchOil}"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Save" Margin="4" Width="80" Command="{Binding SaveCommand}"/>
+            <Button Content="Close" Margin="4" Width="80" Click="CloseButton_Click"/>
+        </StackPanel>
+
+        <Grid Grid.ColumnSpan="99" Grid.RowSpan="99" Background="Gray" Opacity="0.6"
+              Visibility="{Binding IsInitializing, Converter={StaticResource BoolToVisConverter}}" />
+        <TextBlock Grid.ColumnSpan="99" Grid.RowSpan="99" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   FontSize="24" FontStyle="Oblique" FontWeight="Bold" Text="Loading..."
+                   Visibility="{Binding IsInitializing, Converter={StaticResource BoolToVisConverter}}"/>
+    </Grid>
+</Window>
