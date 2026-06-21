@@ -2,7 +2,7 @@
 
 ## Overview
 
-The EmmyHandmade Asset Manager is a WPF-based desktop application originally created to support my wife's small business. It provides comprehensive tracking and management of expenses, inventory, and orders with robust financial reporting capabilities.
+The EmmyHandmade Asset Manager is a WPF-based desktop application originally created in 2015 to support my wife's small business. It provides comprehensive tracking and management of expenses, inventory, and orders with robust financial reporting capabilities.
 
 ## Features
 
