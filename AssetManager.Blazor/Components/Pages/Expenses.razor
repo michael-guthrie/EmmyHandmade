@@ -1,0 +1,172 @@
+@page "/expenses"
+@inject IDbContextFactory<TrackingStore> DbFactory
+@inject ISnackbar Snackbar
+
+@* Port of the WPF ManageMiscExpenses window: an editable list saved in one batch. *@
+
+<PageTitle>Miscellaneous Expenses</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+    <MudText Typo="Typo.h4">Miscellaneous Expenses</MudText>
+    <MudStack Row="true" Spacing="2">
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="AddRow">Add Expense</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="@(_saving || _rows is null)" OnClick="SaveAsync">Save</MudButton>
+    </MudStack>
+</MudStack>
+
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3">@_error</MudAlert>
+}
+
+@if (_rows is null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else
+{
+    <MudPaper Elevation="1" Class="pa-2">
+        <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto">
+            <thead>
+                <tr>
+                    <th style="min-width:180px">Date</th>
+                    <th style="min-width:160px">Amount</th>
+                    <th style="min-width:320px">Description</th>
+                    <th style="width:48px"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _rows)
+                {
+                    <tr @key="row">
+                        <td>
+                            <MudDatePicker @bind-Date="row.DateOfExpense" Margin="Margin.Dense"
+                                           Variant="Variant.Text" />
+                        </td>
+                        <td>
+                            <MudNumericField T="decimal" @bind-Value="row.Amount" Margin="Margin.Dense"
+                                             Variant="Variant.Text" Format="0.00##" HideSpinButtons="true" />
+                        </td>
+                        <td>
+                            <MudTextField @bind-Value="row.Description" Margin="Margin.Dense"
+                                          Variant="Variant.Text" MaxLength="500" Immediate="true" />
+                        </td>
+                        <td>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                           Size="Size.Small" OnClick="@(() => RemoveRow(row))" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th>Total</th>
+                    <th class="quarter-figure">@_rows.Sum(r => r.Amount).ToString("C2")</th>
+                    <th colspan="2"></th>
+                </tr>
+            </tfoot>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+@code {
+    private sealed class ExpenseRow
+    {
+        public int Id { get; init; }
+        public DateTime? DateOfExpense { get; set; }
+        public decimal Amount { get; set; }
+        public string Description { get; set; } = string.Empty;
+    }
+
+    private List<ExpenseRow>? _rows;
+    private readonly List<int> _removedIds = new();
+    private string? _error;
+    private bool _saving;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _rows = await db.MiscellaneousExpenses.AsNoTracking()
+            .OrderByDescending(e => e.DateOfExpense)
+            .Select(e => new ExpenseRow
+            {
+                Id = e.Id,
+                DateOfExpense = e.DateOfExpense,
+                Amount = e.Amount,
+                Description = e.Description,
+            })
+            .ToListAsync();
+
+        _removedIds.Clear();
+        _error = null;
+    }
+
+    private void AddRow() => _rows?.Insert(0, new ExpenseRow { DateOfExpense = DateTime.Today });
+
+    private void RemoveRow(ExpenseRow row)
+    {
+        _rows?.Remove(row);
+        if (row.Id != 0) _removedIds.Add(row.Id);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_rows is null) return;
+
+        if (_rows.Any(r => string.IsNullOrWhiteSpace(r.Description)))
+        {
+            _error = "You have one or more expenses missing a description.";
+            return;
+        }
+
+        _error = null;
+        _saving = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            foreach (var id in _removedIds)
+            {
+                var existing = await db.MiscellaneousExpenses.FindAsync(id);
+                if (existing is not null) db.MiscellaneousExpenses.Remove(existing);
+            }
+
+            foreach (var row in _rows)
+            {
+                if (row.Id == 0)
+                {
+                    db.MiscellaneousExpenses.Add(new MiscellaneousExpense
+                    {
+                        DateOfExpense = row.DateOfExpense ?? DateTime.Today,
+                        Amount = row.Amount,
+                        Description = row.Description.Trim(),
+                    });
+                }
+                else
+                {
+                    var existing = await db.MiscellaneousExpenses.FindAsync(row.Id);
+                    if (existing is null) continue;
+                    existing.DateOfExpense = row.DateOfExpense ?? DateTime.Today;
+                    existing.Amount = row.Amount;
+                    existing.Description = row.Description.Trim();
+                }
+            }
+
+            await db.SaveChangesAsync();
+            Snackbar.Add("Expenses saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not save: {ex.InnerException?.Message ?? ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

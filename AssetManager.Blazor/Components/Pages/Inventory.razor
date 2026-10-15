@@ -1,0 +1,122 @@
+@page "/inventory"
+@inject InventoryCalculationService InventoryService
+
+@* Port of the WPF ViewInventory window: current stock and value per item, with an as-of date and
+   a print command. *@
+
+<PageTitle>Current Inventory</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4 no-print">
+    <MudText Typo="Typo.h4">Current Inventory</MudText>
+    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+        <MudDatePicker @bind-Date="_asOfDate" Label="As of" Variant="Variant.Outlined"
+                       Margin="Margin.Dense" Style="width:180px" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Calculate"
+                   Disabled="@_loading" OnClick="LoadAsync">Calculate</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Print"
+                   OnClick="Print">Print</MudButton>
+    </MudStack>
+</MudStack>
+
+<MudText Typo="Typo.subtitle1" Class="mb-2 only-print">
+    Inventory as of @(_asOfDate?.ToShortDateString())
+</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else if (_rows is not null)
+{
+    @if (_rows.Any(r => !r.IsComputable))
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3 no-print">
+            @_rows.Count(r => !r.IsComputable) item(s) could not be valued because a transaction used
+            units with no conversion to the item's tracking unit. They are excluded from the total.
+        </MudAlert>
+    }
+
+    <MudTable Items="_rows" Hover="true" Dense="true" Striped="true" Breakpoint="Breakpoint.Sm"
+              Filter="FilterRow" AllowUnsorted="false">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Total value: @_totalValue.ToString("C2")</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_search" Placeholder="Search items" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium"
+                          Class="mt-0 no-print" Immediate="true" Clearable="true" />
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>
+                <MudTableSortLabel InitialDirection="SortDirection.Ascending"
+                                   SortBy="new Func<InventoryTotal, object>(r => r.Item.Name)">Name</MudTableSortLabel>
+            </MudTh>
+            <MudTh Style="text-align:right">
+                <MudTableSortLabel SortBy="new Func<InventoryTotal, object>(r => r.IsComputable ? r.Quantity : decimal.MinValue)">Quantity</MudTableSortLabel>
+            </MudTh>
+            <MudTh>Units</MudTh>
+            <MudTh Style="text-align:right">
+                <MudTableSortLabel SortBy="new Func<InventoryTotal, object>(r => r.IsComputable ? r.Value : decimal.MinValue)">Value</MudTableSortLabel>
+            </MudTh>
+            <MudTh Style="text-align:right">Value / Unit</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">@context.Item.Name</MudTd>
+            <MudTd DataLabel="Quantity" Class="quarter-figure" Style="text-align:right">
+                @(context.IsComputable ? context.Quantity.ToString("0.0####") : "—")
+            </MudTd>
+            <MudTd DataLabel="Units">
+                @if (context.IsComputable)
+                {
+                    @context.Item.UnitOfMeasure?.Name
+                }
+                else
+                {
+                    <MudText Color="Color.Error" Typo="Typo.body2">Conversion Error</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Value" Class="quarter-figure" Style="text-align:right">
+                @(context.IsComputable ? context.Value.ToString("C2") : "—")
+            </MudTd>
+            <MudTd DataLabel="Value / Unit" Class="quarter-figure" Style="text-align:right">
+                @(context.UnitValue is { } uv && context.IsComputable ? uv.ToString("C4") : "—")
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new[] { 25, 50, 100, int.MaxValue }" Class="no-print" />
+        </PagerContent>
+    </MudTable>
+}
+
+@code {
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private IReadOnlyList<InventoryTotal>? _rows;
+    private DateTime? _asOfDate = DateTime.Today;
+    private decimal _totalValue;
+    private bool _loading;
+    private string _search = string.Empty;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            // The WPF window defaulted to today and recalculated on demand.
+            _rows = await InventoryService.GetAllTotalsAtDateAsync(_asOfDate ?? DateTime.Today);
+            _totalValue = _rows.Where(r => r.IsComputable).Sum(r => r.Value);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private bool FilterRow(InventoryTotal row) =>
+        string.IsNullOrWhiteSpace(_search)
+        || row.Item.Name.Contains(_search, StringComparison.OrdinalIgnoreCase);
+
+    private async Task Print() => await JS.InvokeVoidAsync("window.print");
+}

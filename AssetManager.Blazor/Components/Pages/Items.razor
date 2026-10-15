@@ -1,0 +1,219 @@
+@page "/items"
+@inject IDbContextFactory<TrackingStore> DbFactory
+@inject LookupService Lookups
+@inject ISnackbar Snackbar
+
+@* Port of the WPF ManageItems window: an always-editable grid of inventory items, saved in one
+   batch with the same validation rules the desktop app applied. *@
+
+<PageTitle>Manage Items</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+    <MudText Typo="Typo.h4">Manage Items</MudText>
+    <MudStack Row="true" Spacing="2">
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="AddRow">Add Item</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="@(_saving || _items is null)" OnClick="SaveAsync">Save</MudButton>
+    </MudStack>
+</MudStack>
+
+@if (_validationErrors.Count > 0)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3">
+        @foreach (var error in _validationErrors)
+        {
+            <div>@error</div>
+        }
+    </MudAlert>
+}
+
+@if (_items is null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else
+{
+    <MudPaper Elevation="1" Class="pa-2">
+        <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto">
+            <thead>
+                <tr>
+                    <th style="min-width:220px">Name</th>
+                    <th style="min-width:120px">Units</th>
+                    <th style="min-width:140px">Alternate Units</th>
+                    <th style="min-width:160px">Conversion Factor</th>
+                    <th style="text-align:center">Oil (% basis)</th>
+                    <th style="width:48px"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _items)
+                {
+                    <tr @key="item">
+                        <td>
+                            <MudTextField @bind-Value="item.Name" Margin="Margin.Dense" MaxLength="50"
+                                          Variant="Variant.Text" Immediate="true" />
+                        </td>
+                        <td>
+                            <MudSelect T="int" @bind-Value="item.UnitOfMeasureId" Margin="Margin.Dense"
+                                       Variant="Variant.Text" Dense="true">
+                                @foreach (var unit in _units)
+                                {
+                                    <MudSelectItem T="int" Value="@unit.Id">@unit.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </td>
+                        <td>
+                            <MudSelect T="int?" @bind-Value="item.AlternateUnitOfMeasureId" Margin="Margin.Dense"
+                                       Variant="Variant.Text" Dense="true" Clearable="true">
+                                <MudSelectItem T="int?" Value="@((int?)null)">(none)</MudSelectItem>
+                                @foreach (var unit in _units)
+                                {
+                                    <MudSelectItem T="int?" Value="@((int?)unit.Id)">@unit.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </td>
+                        <td>
+                            <MudNumericField T="decimal?" @bind-Value="item.AlternateUnitOfMeasureFactor"
+                                             Margin="Margin.Dense" Variant="Variant.Text"
+                                             Format="0.0##########" HideSpinButtons="true" />
+                        </td>
+                        <td style="text-align:center">
+                            <MudCheckBox T="bool" @bind-Value="item.IsPercentBatchOil" Dense="true" />
+                        </td>
+                        <td>
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                           Size="Size.Small" OnClick="@(() => RemoveRow(item))" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+
+    <MudText Typo="Typo.caption" Class="mt-3 d-block">
+        Alternate units bridge measurement groups that have no general conversion — weight to volume
+        for a specific material, say. Give both an alternate unit and a factor, or neither.
+    </MudText>
+}
+
+@code {
+    private List<InventoryItem>? _items;
+    private IReadOnlyList<UnitLookup> _units = Array.Empty<UnitLookup>();
+    private readonly List<InventoryItem> _removed = new();
+    private readonly List<string> _validationErrors = new();
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _units = await Lookups.GetUnitsAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _items = await db.InventoryItems.AsNoTracking().OrderBy(i => i.Name).ToListAsync();
+        _removed.Clear();
+        _validationErrors.Clear();
+    }
+
+    private void AddRow()
+    {
+        // The WPF grid defaulted a new row to ounces by weight (unit 102).
+        _items?.Add(new InventoryItem { Name = string.Empty, UnitOfMeasureId = 102 });
+    }
+
+    private void RemoveRow(InventoryItem item)
+    {
+        if (_items is null) return;
+        _items.Remove(item);
+        if (item.Id != 0) _removed.Add(item);
+    }
+
+    private bool Validate()
+    {
+        _validationErrors.Clear();
+        if (_items is null) return false;
+
+        var validUnitIds = _units.Select(u => u.Id).ToHashSet();
+
+        foreach (var item in _items)
+        {
+            if (!validUnitIds.Contains(item.UnitOfMeasureId))
+            {
+                _validationErrors.Add($"You need to select valid units for {Describe(item)}.");
+            }
+
+            if (item.AlternateUnitOfMeasureFactor.HasValue != item.AlternateUnitOfMeasureId.HasValue)
+            {
+                _validationErrors.Add(
+                    $"For alternate unit conversion of {Describe(item)} you must provide both alternate units and a conversion factor.");
+            }
+        }
+
+        if (_items.Any(i => string.IsNullOrWhiteSpace(i.Name)))
+        {
+            _validationErrors.Add("You have one or more items missing a name.");
+        }
+
+        if (_items.Count != _items.Select(i => i.Name?.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count())
+        {
+            _validationErrors.Add("You have one or more items with a duplicate name.");
+        }
+
+        return _validationErrors.Count == 0;
+    }
+
+    private static string Describe(InventoryItem item) =>
+        string.IsNullOrWhiteSpace(item.Name) ? "(unnamed item)" : item.Name;
+
+    private async Task SaveAsync()
+    {
+        if (!Validate())
+        {
+            Snackbar.Add("Fix the highlighted problems before saving.", Severity.Error);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            foreach (var item in _removed)
+            {
+                db.InventoryItems.Attach(item);
+                db.InventoryItems.Remove(item);
+            }
+
+            foreach (var item in _items!)
+            {
+                item.Name = item.Name.Trim();
+                if (item.Id == 0) db.InventoryItems.Add(item);
+                else db.InventoryItems.Update(item);
+            }
+
+            await db.SaveChangesAsync();
+            Snackbar.Add("Items saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            // Foreign keys are Restrict, so deleting an item that batches or orders reference fails
+            // here rather than silently orphaning history.
+            Snackbar.Add(
+                "Could not save. An item you deleted is still used by an order, batch or output record. " +
+                $"({ex.InnerException?.Message ?? ex.Message})",
+                Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not save: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

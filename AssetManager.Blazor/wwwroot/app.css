@@ -1,0 +1,60 @@
+html, body {
+    font-family: 'Roboto', Helvetica, Arial, sans-serif;
+}
+
+/* Money and quantity columns line up only with tabular figures. */
+.quarter-figure {
+    font-variant-numeric: tabular-nums;
+}
+
+.cursor-pointer {
+    cursor: pointer;
+}
+
+.config-sample {
+    background: var(--mud-palette-background-grey);
+    border-radius: 4px;
+    padding: 12px;
+    overflow-x: auto;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    white-space: pre;
+}
+
+/* The WPF inventory window had a Print command; these rules are what makes the web version's
+   printed page usable. */
+.only-print {
+    display: none;
+}
+
+@media print {
+    .no-print,
+    .mud-appbar,
+    .mud-drawer,
+    .mud-snackbar-provider {
+        display: none !important;
+    }
+
+    .only-print {
+        display: block;
+    }
+
+    .mud-main-content {
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    .mud-paper,
+    .mud-table {
+        box-shadow: none !important;
+    }
+
+    /* Keep rows whole across page breaks. */
+    tr {
+        break-inside: avoid;
+    }
+
+    thead {
+        display: table-header-group;
+    }
+}

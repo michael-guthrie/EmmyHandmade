@@ -1,0 +1,32 @@
+@* Mirrors the tile grid on the WPF MainWindow. *@
+
+<MudNavMenu>
+    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
+
+    <MudNavGroup Title="Inventory" Icon="@Icons.Material.Filled.Inventory" Expanded="true">
+        <MudNavLink Href="inventory" Icon="@Icons.Material.Filled.ListAlt">View Current Inventory</MudNavLink>
+        <MudNavLink Href="items" Icon="@Icons.Material.Filled.Tune">Manage Items</MudNavLink>
+    </MudNavGroup>
+
+    <MudNavGroup Title="Orders" Icon="@Icons.Material.Filled.AddShoppingCart" Expanded="true">
+        <MudNavLink Href="orders/new" Icon="@Icons.Material.Filled.Add">Add Order</MudNavLink>
+        <MudNavLink Href="orders" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.History">Order History</MudNavLink>
+    </MudNavGroup>
+
+    <MudNavGroup Title="Production" Icon="@Icons.Material.Filled.Science" Expanded="true">
+        <MudNavLink Href="batches/new" Icon="@Icons.Material.Filled.Add">Add Batch</MudNavLink>
+        <MudNavLink Href="batches" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.History">Batch History</MudNavLink>
+        <MudNavLink Href="products" Icon="@Icons.Material.Filled.Category">View Products</MudNavLink>
+    </MudNavGroup>
+
+    <MudNavGroup Title="Output" Icon="@Icons.Material.Filled.LocalShipping" Expanded="true">
+        <MudNavLink Href="output/new" Icon="@Icons.Material.Filled.Add">Add Sale / Loss / Other</MudNavLink>
+        <MudNavLink Href="output" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.History">Output History</MudNavLink>
+    </MudNavGroup>
+
+    <MudDivider Class="my-2" />
+
+    <MudNavLink Href="expenses" Icon="@Icons.Material.Filled.Receipt">Miscellaneous Expenses</MudNavLink>
+    <MudNavLink Href="reports/detail" Icon="@Icons.Material.Filled.Assessment">Expense Detail</MudNavLink>
+    <MudNavLink Href="backup" Icon="@Icons.Material.Filled.Download">Export Data</MudNavLink>
+</MudNavMenu>

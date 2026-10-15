@@ -1,0 +1,88 @@
+@page "/backup"
+@inject DatabaseBackupService BackupService
+
+@* Replaces the WPF File > Export data menu command, which ran BACKUP DATABASE ... TO DISK and
+   wrote a .bak wherever the user pointed a save dialog.
+
+   PostgreSQL has no in-SQL backup statement, so the equivalent is a pg_dump the browser downloads.
+   The dump is in PostgreSQL's custom format and restores with pg_restore. *@
+
+<PageTitle>Export Data</PageTitle>
+
+<MudText Typo="Typo.h4" GutterBottom="true">Export Data</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4" Elevation="1">
+            @if (_diagnostics is null)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+            else if (_diagnostics.IsAvailable)
+            {
+                <MudAlert Severity="Severity.Success" Dense="true" Class="mb-4">
+                    Ready to back up <strong>@_diagnostics.DatabaseName</strong> on
+                    <strong>@_diagnostics.Host</strong>.
+                </MudAlert>
+
+                <MudText Class="mb-4">
+                    Downloads a complete backup of the database in PostgreSQL's custom format. Restore
+                    it with <code>pg_restore</code>. This is the counterpart of the desktop app's
+                    File &rsaquo; Export data command.
+                </MudText>
+
+                @* A plain link to the download endpoint: no JS interop, and the browser's own save
+                   dialog stands in for the WPF SaveFileDialog. *@
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Download"
+                           Href="/export/database" Target="_self">
+                    Download Backup
+                </MudButton>
+
+                <MudText Typo="Typo.caption" Class="mt-4 d-block">
+                    Using @_diagnostics.PgDumpVersion
+                </MudText>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-4">
+                    <MudText Typo="Typo.subtitle2">pg_dump could not be run, so backups are unavailable.</MudText>
+                    <MudText Typo="Typo.body2" Class="mt-2">@_diagnostics.Error</MudText>
+                </MudAlert>
+
+                <MudText Class="mb-2">
+                    Install the PostgreSQL client tools on the machine running this app. If pg_dump is
+                    installed but not on PATH, set its full path in configuration:
+                </MudText>
+                <pre class="config-sample"><code>{
+  "Backup": {
+    "PgDumpPath": "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_dump.exe"
+  }
+}</code></pre>
+                <MudText Typo="Typo.body2">
+                    Looked for: <code>@_diagnostics.PgDumpPath</code>
+                </MudText>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.h6" GutterBottom="true">Restoring</MudText>
+            <pre class="config-sample"><code>createdb assetmanager_restored
+pg_restore --dbname=assetmanager_restored \
+           --no-owner --no-privileges \
+           AssetManagerData.backup</code></pre>
+            <MudText Typo="Typo.body2" Class="mt-3">
+                Restore into a new database first and check it before replacing anything you still need.
+            </MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private BackupDiagnostics? _diagnostics;
+
+    protected override async Task OnInitializedAsync() =>
+        _diagnostics = await BackupService.GetDiagnosticsAsync();
+}

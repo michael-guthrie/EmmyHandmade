@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    WPF desktop front end, ported from .NET Framework 4.7.1 to .NET 10.
+
+    The old project was an old-style csproj with packages.config. All of the business logic now
+    lives in AssetManager.Core, shared with the Blazor app, so this project is UI only.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>AssetManager</RootNamespace>
+    <AssemblyName>AssetManager</AssemblyName>
+    <ApplicationIcon>Assets\Custom-Icon-Design-Pretty-Office-3-Inventory-maintenance.ico</ApplicationIcon>
+    <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AssetManager.Core\AssetManager.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Replaces MvvmLight (deprecated, last published 2018, net35). -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+
+    <!-- Replaces System.Windows.Interactivity, which was .NET Framework only. -->
+    <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.161" />
+
+    <!-- 2.x is the first version to support .NET Core and later; 1.4.13 was .NET Framework only. -->
+    <PackageReference Include="WpfAnimatedGif" Version="2.0.2" />
+
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.13" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.13">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\*.ico" />
+    <Resource Include="Assets\loading.gif" />
+  </ItemGroup>
+
+</Project>

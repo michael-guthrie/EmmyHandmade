@@ -1,0 +1,125 @@
+@page "/"
+@inject ExpenseReportService ExpenseReports
+@inject InventoryCalculationService Inventory
+
+<PageTitle>Expense &amp; Inventory Management</PageTitle>
+
+<MudText Typo="Typo.h4" GutterBottom="true">Transaction Quick Lookup</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-4">
+                <MudSelect T="int" Value="_year" ValueChanged="OnYearChanged"
+                           Label="Year" Dense="true" Variant="Variant.Outlined">
+                    @foreach (var year in _years)
+                    {
+                        <MudSelectItem T="int" Value="@year">@year</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudSelect T="int" Value="_quarter" ValueChanged="OnQuarterChanged"
+                           Label="Quarter" Dense="true" Variant="Variant.Outlined">
+                    @foreach (var quarter in ExpenseReportService.AvailableQuarters)
+                    {
+                        <MudSelectItem T="int" Value="@quarter">Q@(quarter)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudStack>
+
+            @if (_summary is null)
+            {
+                <MudSkeleton Height="120px" />
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Hover="false" Elevation="0">
+                    <tbody>
+                        <tr>
+                            <td>Expenses</td>
+                            <td class="quarter-figure" align="right">@_summary.ExpenseTotal.ToString("C2")</td>
+                        </tr>
+                        <tr>
+                            <td>Sales</td>
+                            <td class="quarter-figure" align="right">@_summary.SalesTotal.ToString("C2")</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Net</strong></td>
+                            <td class="quarter-figure" align="right">
+                                <MudText Typo="Typo.body1"
+                                         Color="@(_summary.Net < 0 ? Color.Error : Color.Success)">
+                                    <strong>@_summary.Net.ToString("C2")</strong>
+                                </MudText>
+                            </td>
+                        </tr>
+                    </tbody>
+                </MudSimpleTable>
+
+                <MudButton Href="/reports/detail" Variant="Variant.Text" Size="Size.Small"
+                           EndIcon="@Icons.Material.Filled.ArrowForward" Class="mt-3">
+                    Detail by date range
+                </MudButton>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.h6" GutterBottom="true">Inventory value</MudText>
+            @if (_inventoryValue is null)
+            {
+                <MudSkeleton Height="80px" />
+            }
+            else
+            {
+                <MudText Typo="Typo.h4" Class="quarter-figure">@_inventoryValue.Value.ToString("C2")</MudText>
+                <MudText Typo="Typo.caption">
+                    @_computableCount of @_itemCount items valued
+                    @if (_computableCount != _itemCount)
+                    {
+                        <span> &mdash; the rest are missing a unit conversion</span>
+                    }
+                </MudText>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private IReadOnlyList<int> _years = Array.Empty<int>();
+    private QuarterSummary? _summary;
+    private decimal? _inventoryValue;
+    private int _itemCount;
+    private int _computableCount;
+
+    private int _year = DateTime.Now.Year;
+    private int _quarter = ExpenseReportService.CurrentQuarter;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _years = await ExpenseReports.GetAvailableYearsAsync();
+        await LoadSummaryAsync();
+
+        var totals = await Inventory.GetAllTotalsCurrentAsync();
+        _itemCount = totals.Count;
+        _computableCount = totals.Count(t => t.IsComputable);
+        _inventoryValue = totals.Where(t => t.IsComputable).Sum(t => t.Value);
+    }
+
+    private async Task OnYearChanged(int year)
+    {
+        _year = year;
+        await LoadSummaryAsync();
+    }
+
+    private async Task OnQuarterChanged(int quarter)
+    {
+        _quarter = quarter;
+        await LoadSummaryAsync();
+    }
+
+    private async Task LoadSummaryAsync()
+    {
+        _summary = null;
+        _summary = await ExpenseReports.GetQuarterSummaryAsync(_year, _quarter);
+    }
+}

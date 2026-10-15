@@ -1,0 +1,167 @@
+@page "/products"
+@inject IDbContextFactory<TrackingStore> DbFactory
+@inject InventoryCalculationService Inventory
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+@* Port of the WPF ViewProducts window: finished products with produced / out / remaining and
+   unit cost, with renaming and adding in place. *@
+
+<PageTitle>Products</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+    <MudText Typo="Typo.h4">Products</MudText>
+    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+        <MudDatePicker @bind-Date="_asOfDate" Label="As of" Variant="Variant.Outlined"
+                       Margin="Margin.Dense" Style="width:170px" />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Calculate"
+                   OnClick="LoadAsync">Calculate</MudButton>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="AddProductAsync">New Product</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="@(_saving || _rows is null)" OnClick="SaveNamesAsync">Save Names</MudButton>
+    </MudStack>
+</MudStack>
+
+@if (_rows is null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else if (_rows.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">
+        No products yet. Create one here, or from the product picker when adding a batch.
+    </MudAlert>
+}
+else
+{
+    <MudTable Items="_rows" Hover="true" Dense="true" Striped="true" Breakpoint="Breakpoint.Sm">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">
+                Total remaining value: @_rows.Sum(r => r.Total.RemainingValue).ToString("C2")
+            </MudText>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>
+                <MudTableSortLabel InitialDirection="SortDirection.Ascending"
+                                   SortBy="new Func<ProductRow, object>(r => r.Name)">Name</MudTableSortLabel>
+            </MudTh>
+            <MudTh Style="text-align:right">
+                <MudTableSortLabel SortBy="new Func<ProductRow, object>(r => r.Total.TotalProduced)">Produced</MudTableSortLabel>
+            </MudTh>
+            <MudTh Style="text-align:right">
+                <MudTableSortLabel SortBy="new Func<ProductRow, object>(r => r.Total.TotalOut)">Out</MudTableSortLabel>
+            </MudTh>
+            <MudTh Style="text-align:right">
+                <MudTableSortLabel SortBy="new Func<ProductRow, object>(r => r.Total.Remaining)">Remaining</MudTableSortLabel>
+            </MudTh>
+            <MudTh Style="text-align:right">Remaining Value</MudTh>
+            <MudTh Style="text-align:right">Cost / Unit</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">
+                <MudTextField @bind-Value="context.Name" Margin="Margin.Dense" Variant="Variant.Text"
+                              MaxLength="100" Immediate="true" />
+            </MudTd>
+            <MudTd DataLabel="Produced" Class="quarter-figure" Style="text-align:right">
+                @context.Total.TotalProduced.ToString("0.0####")
+            </MudTd>
+            <MudTd DataLabel="Out" Class="quarter-figure" Style="text-align:right">
+                @context.Total.TotalOut.ToString("0.0####")
+            </MudTd>
+            <MudTd DataLabel="Remaining" Class="quarter-figure" Style="text-align:right">
+                @context.Total.Remaining.ToString("0.0####")
+            </MudTd>
+            <MudTd DataLabel="Remaining Value" Class="quarter-figure" Style="text-align:right">
+                @context.Total.RemainingValue.ToString("C2")
+            </MudTd>
+            <MudTd DataLabel="Cost / Unit" Class="quarter-figure" Style="text-align:right">
+                @(context.Total.UnitValue is { } uv ? uv.ToString("C4") : "—")
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new[] { 25, 50, int.MaxValue }" />
+        </PagerContent>
+    </MudTable>
+}
+
+@code {
+    private sealed class ProductRow
+    {
+        public required int Id { get; init; }
+        public required string Name { get; set; }
+        public required string OriginalName { get; init; }
+        public required ProductTotal Total { get; init; }
+    }
+
+    private List<ProductRow>? _rows;
+    private DateTime? _asOfDate = DateTime.Today;
+    private bool _saving;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var totals = await Inventory.GetAllProductTotalsAtDateAsync(_asOfDate ?? DateTime.Today);
+        _rows = totals.Select(t => new ProductRow
+        {
+            Id = t.Product.Id,
+            Name = t.Product.Name,
+            OriginalName = t.Product.Name,
+            Total = t,
+        }).ToList();
+    }
+
+    private async Task AddProductAsync()
+    {
+        var dialog = await DialogService.ShowAsync<NewProductDialog>("New Product");
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            Snackbar.Add("Product created.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task SaveNamesAsync()
+    {
+        if (_rows is null) return;
+
+        var changed = _rows.Where(r => r.Name.Trim() != r.OriginalName).ToList();
+        if (changed.Count == 0)
+        {
+            Snackbar.Add("No name changes to save.", Severity.Info);
+            return;
+        }
+
+        if (changed.Any(r => string.IsNullOrWhiteSpace(r.Name)))
+        {
+            Snackbar.Add("Product names cannot be empty.", Severity.Error);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            foreach (var row in changed)
+            {
+                var product = await db.BatchProducts.SingleAsync(p => p.Id == row.Id);
+                product.Name = row.Name.Trim();
+            }
+            await db.SaveChangesAsync();
+            Snackbar.Add($"{changed.Count} product name(s) saved.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            Snackbar.Add(
+                $"Could not save — product names must be unique. ({ex.InnerException?.Message ?? ex.Message})",
+                Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

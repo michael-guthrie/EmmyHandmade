@@ -1,0 +1,133 @@
+@page "/reports/detail"
+@inject ExpenseReportService Reports
+
+@* Port of the WPF ExpenseDetail user control: expense and sales figures broken out over an
+   arbitrary date range, plus the closing inventory position. *@
+
+<PageTitle>Expense Detail</PageTitle>
+
+<MudText Typo="Typo.h4" GutterBottom="true">Expense Detail</MudText>
+
+<MudPaper Class="pa-4 mb-4 no-print" Elevation="1">
+    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
+        <MudDatePicker @bind-Date="_dateOne" Label="From" Variant="Variant.Outlined"
+                       Margin="Margin.Dense" Style="width:190px" />
+        <MudDatePicker @bind-Date="_dateTwo" Label="To" Variant="Variant.Outlined"
+                       Margin="Margin.Dense" Style="width:190px" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Search"
+                   Disabled="@_loading" OnClick="SearchAsync">Search</MudButton>
+        @if (_result is not null)
+        {
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Print"
+                       OnClick="Print">Print</MudButton>
+        }
+    </MudStack>
+    <MudText Typo="Typo.caption" Class="mt-2 d-block">
+        Expenses count against the date an order was placed. Either date may be the earlier one.
+    </MudText>
+</MudPaper>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else if (_result is { } r)
+{
+    <MudText Typo="Typo.subtitle1" Class="mb-3">
+        @r.Start.ToShortDateString() &ndash; @r.End.ToShortDateString()
+    </MudText>
+
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" GutterBottom="true">Period activity</MudText>
+                <MudSimpleTable Dense="true" Hover="false" Elevation="0">
+                    <tbody>
+                        <tr><td>Purchases</td><td class="quarter-figure" align="right">@r.Purchases.ToString("C2")</td></tr>
+                        <tr><td>Shipping</td><td class="quarter-figure" align="right">@r.Shipping.ToString("C2")</td></tr>
+                        <tr><td>Tax</td><td class="quarter-figure" align="right">@r.Tax.ToString("C2")</td></tr>
+                        <tr><td>Miscellaneous</td><td class="quarter-figure" align="right">@r.Miscellaneous.ToString("C2")</td></tr>
+                        <tr><td>Discounts</td><td class="quarter-figure" align="right">(@r.Discount.ToString("C2"))</td></tr>
+                        <tr>
+                            <td><strong>Total expenses</strong></td>
+                            <td class="quarter-figure" align="right"><strong>@r.TotalExpenses.ToString("C2")</strong></td>
+                        </tr>
+                        <tr><td>Sales</td><td class="quarter-figure" align="right">@r.Sales.ToString("C2")</td></tr>
+                        <tr>
+                            <td><strong>Net cost for period</strong></td>
+                            <td class="quarter-figure" align="right">
+                                <MudText Typo="Typo.body1" Color="@(r.GrandTotal > 0 ? Color.Error : Color.Success)">
+                                    <strong>@r.GrandTotal.ToString("C2")</strong>
+                                </MudText>
+                            </td>
+                        </tr>
+                    </tbody>
+                </MudSimpleTable>
+                <MudText Typo="Typo.caption" Class="mt-2 d-block">
+                    Net cost is expenses less sales: positive means the period cost more than it brought in.
+                </MudText>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" GutterBottom="true">Closing position</MudText>
+                <MudSimpleTable Dense="true" Hover="false" Elevation="0">
+                    <tbody>
+                        <tr>
+                            <td>Raw material value</td>
+                            <td class="quarter-figure" align="right">@r.EndOfPeriodMaterialValue.ToString("C2")</td>
+                        </tr>
+                        <tr>
+                            <td>Finished product value</td>
+                            <td class="quarter-figure" align="right">@r.EndOfPeriodProductValue.ToString("C2")</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Total inventory value</strong></td>
+                            <td class="quarter-figure" align="right">
+                                <strong>@((r.EndOfPeriodMaterialValue + r.EndOfPeriodProductValue).ToString("C2"))</strong>
+                            </td>
+                        </tr>
+                    </tbody>
+                </MudSimpleTable>
+
+                @if (!r.MaterialValueComplete)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                        Some items could not be valued because of a missing unit conversion, and
+                        contribute nothing to the material total.
+                    </MudAlert>
+                }
+
+                <MudText Typo="Typo.caption" Class="mt-2 d-block">
+                    Valued as at @r.End.ToShortDateString().
+                </MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private DateTime? _dateOne = DateTime.Today.AddMonths(-3);
+    private DateTime? _dateTwo = DateTime.Today;
+    private RangeDetail? _result;
+    private bool _loading;
+
+    private async Task SearchAsync()
+    {
+        _loading = true;
+        try
+        {
+            _result = await Reports.GetRangeDetailAsync(
+                _dateOne ?? DateTime.Today, _dateTwo ?? DateTime.Today);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task Print() => await JS.InvokeVoidAsync("window.print");
+}

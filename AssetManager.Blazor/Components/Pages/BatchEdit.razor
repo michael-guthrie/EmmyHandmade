@@ -1,0 +1,659 @@
+@page "/batches/new"
+@page "/batches/{Id:int}"
+@inject IDbContextFactory<TrackingStore> DbFactory
+@inject LookupService Lookups
+@inject BatchCostingService Costing
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager Nav
+
+@* Port of the WPF ModifyBatch window. Costs and batch percentages recalculate whenever a line or
+   the batch date changes, as the desktop version did through its messenger. *@
+
+<PageTitle>@Title</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+    <MudText Typo="Typo.h4">@Title</MudText>
+    <MudStack Row="true" Spacing="2">
+        @if (Id is not null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                       StartIcon="@Icons.Material.Filled.Delete" OnClick="DeleteAsync">Delete</MudButton>
+        }
+        <MudButton Variant="Variant.Outlined" Href="/batches">Close</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="@(_saving || _loading)" OnClick="SaveAsync">Save</MudButton>
+    </MudStack>
+</MudStack>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else if (_notFound)
+{
+    <MudAlert Severity="Severity.Error">That batch no longer exists.</MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <MudGrid>
+            <MudItem xs="12" md="5">
+                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                    <MudSelect T="int" Value="_productId" ValueChanged="OnProductChanged" Label="Product"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true">
+                        <MudSelectItem T="int" Value="0">(select a product)</MudSelectItem>
+                        @foreach (var product in _lookups.Products)
+                        {
+                            <MudSelectItem T="int" Value="@product.Id">@product.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                               OnClick="NewProductAsync">New</MudButton>
+                </MudStack>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudDatePicker Date="_batchDate" DateChanged="OnBatchDateChanged" Label="Date made"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField @bind-Value="_description" Label="Batch description" MaxLength="500"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+            <MudText Typo="Typo.h6">Used Items</MudText>
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                @if (_recalculating)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Primary" />
+                }
+                <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="@(() => AddLine(_usedLines))">Add Line</MudButton>
+            </MudStack>
+        </MudStack>
+
+        @if (_usedLines.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="my-3">No materials used yet.</MudText>
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto">
+                <thead>
+                    <tr>
+                        <th style="min-width:200px">Item</th>
+                        <th style="min-width:140px">Quantity</th>
+                        <th style="min-width:110px">Units</th>
+                        <th style="text-align:center">Default</th>
+                        <th style="text-align:right">% of Batch</th>
+                        <th style="text-align:right">Cost</th>
+                        <th style="width:96px"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _usedLines)
+                    {
+                        <tr @key="line.Key">
+                            <td>
+                                <MudSelect T="int" Value="line.InventoryItemId"
+                                           ValueChanged="@(v => OnItemChangedAsync(line, v))"
+                                           Margin="Margin.Dense" Variant="Variant.Text" Dense="true">
+                                    <MudSelectItem T="int" Value="0">(select an item)</MudSelectItem>
+                                    @foreach (var item in _lookups.Items)
+                                    {
+                                        <MudSelectItem T="int" Value="@item.Id">@item.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </td>
+                            <td>
+                                <MudNumericField T="decimal" Value="line.Quantity"
+                                                 ValueChanged="@(v => OnQuantityChangedAsync(line, v))"
+                                                 Margin="Margin.Dense" Variant="Variant.Text"
+                                                 Format="0.0#######" HideSpinButtons="true" />
+                            </td>
+                            <td>
+                                <MudSelect T="int" Value="line.UnitOfMeasureId"
+                                           ValueChanged="@(v => OnUnitChangedAsync(line, v))"
+                                           Margin="Margin.Dense" Variant="Variant.Text" Dense="true">
+                                    @foreach (var unit in _lookups.Units)
+                                    {
+                                        <MudSelectItem T="int" Value="@unit.Id">@unit.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </td>
+                            <td style="text-align:center">
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                    @_lookups.ItemUnitName(line.InventoryItemId)
+                                </MudText>
+                            </td>
+                            <td class="quarter-figure" style="text-align:right">
+                                @(line.Percent is { } p ? p.ToString("0.0#######") : "—")
+                            </td>
+                            <td class="quarter-figure" style="text-align:right">
+                                @if (line.Cost is { } cost)
+                                {
+                                    <MudText Typo="Typo.body2" Color="@CostColor(cost)">@cost.Display</MudText>
+                                }
+                            </td>
+                            <td>
+                                <MudStack Row="true" Spacing="0">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Receipt" Size="Size.Small"
+                                                   Title="Cost detail"
+                                                   Disabled="@(line.Cost?.History is not { Count: > 0 })"
+                                                   OnClick="@(() => ShowCostDetailAsync(line))" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                                   Size="Size.Small" OnClick="@(() => RemoveLineAsync(line))" />
+                                </MudStack>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+            <MudText Typo="Typo.h6">Loss Items</MudText>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="@(() => AddLine(_lossLines))">Add Line</MudButton>
+        </MudStack>
+
+        @if (_lossLines.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="my-3">No losses recorded.</MudText>
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto">
+                <thead>
+                    <tr>
+                        <th style="min-width:200px">Item</th>
+                        <th style="min-width:140px">Quantity</th>
+                        <th style="min-width:110px">Units</th>
+                        <th style="text-align:center">Default</th>
+                        <th style="text-align:right">Cost</th>
+                        <th style="width:96px"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _lossLines)
+                    {
+                        <tr @key="line.Key">
+                            <td>
+                                <MudSelect T="int" Value="line.InventoryItemId"
+                                           ValueChanged="@(v => OnItemChangedAsync(line, v))"
+                                           Margin="Margin.Dense" Variant="Variant.Text" Dense="true">
+                                    <MudSelectItem T="int" Value="0">(select an item)</MudSelectItem>
+                                    @foreach (var item in _lookups.Items)
+                                    {
+                                        <MudSelectItem T="int" Value="@item.Id">@item.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </td>
+                            <td>
+                                <MudNumericField T="decimal" Value="line.Quantity"
+                                                 ValueChanged="@(v => OnQuantityChangedAsync(line, v))"
+                                                 Margin="Margin.Dense" Variant="Variant.Text"
+                                                 Format="0.0###" HideSpinButtons="true" />
+                            </td>
+                            <td>
+                                <MudSelect T="int" Value="line.UnitOfMeasureId"
+                                           ValueChanged="@(v => OnUnitChangedAsync(line, v))"
+                                           Margin="Margin.Dense" Variant="Variant.Text" Dense="true">
+                                    @foreach (var unit in _lookups.Units)
+                                    {
+                                        <MudSelectItem T="int" Value="@unit.Id">@unit.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </td>
+                            <td style="text-align:center">
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                    @_lookups.ItemUnitName(line.InventoryItemId)
+                                </MudText>
+                            </td>
+                            <td class="quarter-figure" style="text-align:right">
+                                @if (line.Cost is { } cost)
+                                {
+                                    <MudText Typo="Typo.body2" Color="@CostColor(cost)">@cost.Display</MudText>
+                                }
+                            </td>
+                            <td>
+                                <MudStack Row="true" Spacing="0">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Receipt" Size="Size.Small"
+                                                   Title="Cost detail"
+                                                   Disabled="@(line.Cost?.History is not { Count: > 0 })"
+                                                   OnClick="@(() => ShowCostDetailAsync(line))" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                                   Size="Size.Small" OnClick="@(() => RemoveLineAsync(line))" />
+                                </MudStack>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </MudPaper>
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudGrid>
+            <MudItem xs="6" md="3">
+                <MudText Typo="Typo.caption">Usage Cost</MudText>
+                <MudText Typo="Typo.h6" Class="quarter-figure">@(_summary?.UsageCostDisplay ?? "—")</MudText>
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudText Typo="Typo.caption">Loss Cost</MudText>
+                <MudText Typo="Typo.h6" Class="quarter-figure">@(_summary?.LossCostDisplay ?? "—")</MudText>
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudText Typo="Typo.caption">Total Cost</MudText>
+                <MudText Typo="Typo.h6" Class="quarter-figure">@(_summary?.TotalCostDisplay ?? "—")</MudText>
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudText Typo="Typo.caption">Cost / Unit</MudText>
+                <MudText Typo="Typo.h6" Class="quarter-figure">@(_summary?.PerUnitCostDisplay ?? "—")</MudText>
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudNumericField T="decimal?" Value="_unitsProduced" ValueChanged="OnUnitsProducedChanged"
+                                 Label="Units produced" Format="0.0#####" Variant="Variant.Outlined"
+                                 Margin="Margin.Dense" HideSpinButtons="true" />
+            </MudItem>
+        </MudGrid>
+
+        @if (_summary is { IsComplete: false })
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                Some lines could not be costed — purchases on record do not cover the quantity used, or
+                a unit conversion is missing. The totals shown are only what could be accounted for.
+            </MudAlert>
+        }
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private sealed class LineModel
+    {
+        public int Key { get; init; }
+        public int EntityId { get; init; }
+        public int InventoryItemId { get; set; }
+        public decimal Quantity { get; set; }
+        public int UnitOfMeasureId { get; set; } = 102;
+        public BatchLineCost? Cost { get; set; }
+        public decimal? Percent { get; set; }
+    }
+
+    private readonly List<LineModel> _usedLines = new();
+    private readonly List<LineModel> _lossLines = new();
+    private readonly List<int> _removedUsedIds = new();
+    private readonly List<int> _removedLossIds = new();
+
+    private LookupSet _lookups = new(Array.Empty<ItemLookup>(), Array.Empty<ProductLookup>(), Array.Empty<UnitLookup>());
+
+    private int _productId;
+    private DateTime? _batchDate = DateTime.Today;
+    private string? _description;
+    private decimal? _unitsProduced;
+    private BatchCostSummary? _summary;
+
+    private int _nextKey = 1;
+    private bool _loading = true;
+    private bool _saving;
+    private bool _notFound;
+    private bool _recalculating;
+
+    private string Title => Id is null ? "Add Batch" : "View / Edit Batch";
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _notFound = false;
+        _usedLines.Clear();
+        _lossLines.Clear();
+        _removedUsedIds.Clear();
+        _removedLossIds.Clear();
+
+        _lookups = await Lookups.GetAllAsync();
+
+        if (Id is null)
+        {
+            _productId = 0;
+            _batchDate = DateTime.Now;
+            _description = null;
+            _unitsProduced = null;
+            _summary = null;
+        }
+        else
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var batch = await db.Batches.AsNoTracking()
+                .Include(b => b.BatchItems)
+                .Include(b => b.BatchLossItems)
+                .SingleOrDefaultAsync(b => b.Id == Id);
+
+            if (batch is null)
+            {
+                _notFound = true;
+                _loading = false;
+                return;
+            }
+
+            _productId = batch.ProductId;
+            _batchDate = batch.BatchDate;
+            _description = batch.Description;
+            _unitsProduced = batch.UnitsProduced;
+
+            foreach (var bi in batch.BatchItems)
+            {
+                _usedLines.Add(new LineModel
+                {
+                    Key = _nextKey++,
+                    EntityId = bi.Id,
+                    InventoryItemId = bi.InventoryItemId,
+                    Quantity = bi.Quantity,
+                    UnitOfMeasureId = bi.UnitOfMeasureId,
+                });
+            }
+
+            foreach (var bli in batch.BatchLossItems)
+            {
+                _lossLines.Add(new LineModel
+                {
+                    Key = _nextKey++,
+                    EntityId = bli.Id,
+                    InventoryItemId = bli.InventoryItemId,
+                    Quantity = bli.Quantity,
+                    UnitOfMeasureId = bli.UnitOfMeasureId,
+                });
+            }
+
+            await RecalculateAsync();
+        }
+
+        _loading = false;
+    }
+
+    private static Color CostColor(BatchLineCost cost) =>
+        cost.Status is CostStatus.Costed or CostStatus.Zero or CostStatus.NoBatchDate
+            ? Color.Default
+            : Color.Warning;
+
+    private async Task AddLine(List<LineModel> lines)
+    {
+        lines.Add(new LineModel { Key = _nextKey++ });
+        await RecalculateAsync();
+    }
+
+    private async Task RemoveLineAsync(LineModel line)
+    {
+        if (_usedLines.Remove(line))
+        {
+            if (line.EntityId != 0) _removedUsedIds.Add(line.EntityId);
+        }
+        else if (_lossLines.Remove(line))
+        {
+            if (line.EntityId != 0) _removedLossIds.Add(line.EntityId);
+        }
+
+        await RecalculateAsync();
+    }
+
+    /// <summary>Picking an item switches the line to that item's own tracking unit.</summary>
+    private async Task OnItemChangedAsync(LineModel line, int itemId)
+    {
+        line.InventoryItemId = itemId;
+        var item = _lookups.FindItem(itemId);
+        if (item is not null) line.UnitOfMeasureId = item.UnitOfMeasureId;
+        await RecalculateAsync();
+    }
+
+    private async Task OnQuantityChangedAsync(LineModel line, decimal quantity)
+    {
+        line.Quantity = quantity;
+        await RecalculateAsync();
+    }
+
+    private async Task OnUnitChangedAsync(LineModel line, int unitId)
+    {
+        line.UnitOfMeasureId = unitId;
+        await RecalculateAsync();
+    }
+
+    private async Task OnBatchDateChanged(DateTime? date)
+    {
+        _batchDate = date;
+        await RecalculateAsync();
+    }
+
+    private void OnUnitsProducedChanged(decimal? value)
+    {
+        _unitsProduced = value;
+        // Per-unit cost is derived from the summary, so only the summary needs rebuilding.
+        _summary = BuildSummary();
+    }
+
+    private void OnProductChanged(int productId) => _productId = productId;
+
+    private async Task NewProductAsync()
+    {
+        var dialog = await DialogService.ShowAsync<NewProductDialog>("New Product");
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: int newId })
+        {
+            _lookups = await Lookups.GetAllAsync();
+            _productId = newId;
+        }
+    }
+
+    /// <summary>
+    /// Recosts every line against one snapshot of the purchase history and recomputes the used-item
+    /// percentages. The WPF version re-queried the whole history once per line; this is one pass.
+    /// </summary>
+    private async Task RecalculateAsync()
+    {
+        _recalculating = true;
+        try
+        {
+            var allLines = _usedLines.Concat(_lossLines)
+                .Select(l => new BatchLineInput(l.Key, l.InventoryItemId, l.Quantity, l.UnitOfMeasureId))
+                .ToList();
+
+            var costs = await Costing.CalculateLineCostsAsync(allLines, _batchDate);
+
+            foreach (var line in _usedLines.Concat(_lossLines))
+            {
+                line.Cost = costs.GetValueOrDefault(line.Key);
+            }
+
+            var usedInputs = _usedLines
+                .Select(l => new BatchLineInput(l.Key, l.InventoryItemId, l.Quantity, l.UnitOfMeasureId))
+                .ToList();
+
+            var percentages = await Costing.CalculateUsedItemPercentagesAsync(usedInputs);
+            foreach (var line in _usedLines)
+            {
+                line.Percent = percentages.GetValueOrDefault(line.Key);
+            }
+
+            _summary = BuildSummary();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not recalculate costs: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _recalculating = false;
+        }
+    }
+
+    private BatchCostSummary BuildSummary() => BatchCostingService.Summarise(
+        _usedLines.Select(l => l.Cost ?? BatchLineCost.None(CostStatus.NotFound)).ToList(),
+        _lossLines.Select(l => l.Cost ?? BatchLineCost.None(CostStatus.NotFound)).ToList(),
+        _unitsProduced);
+
+    private async Task ShowCostDetailAsync(LineModel line)
+    {
+        var parameters = new DialogParameters<CostHistoryDialog>
+        {
+            { x => x.History, line.Cost?.History },
+        };
+
+        var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true };
+        await DialogService.ShowAsync<CostHistoryDialog>("Cost detail", parameters, options);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_productId == 0)
+        {
+            Snackbar.Add("Select a product for this batch.", Severity.Error);
+            return;
+        }
+
+        if (_usedLines.Concat(_lossLines).Any(l => l.InventoryItemId == 0))
+        {
+            Snackbar.Add("Every line needs an item selected.", Severity.Error);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            Batch batch;
+            if (Id is null)
+            {
+                batch = new Batch();
+                db.Batches.Add(batch);
+            }
+            else
+            {
+                batch = await db.Batches
+                    .Include(b => b.BatchItems)
+                    .Include(b => b.BatchLossItems)
+                    .SingleAsync(b => b.Id == Id);
+            }
+
+            batch.ProductId = _productId;
+            batch.BatchDate = _batchDate ?? DateTime.Today;
+            batch.Description = _description;
+            batch.UnitsProduced = _unitsProduced;
+
+            // The WPF app stored the computed cost on the batch; product valuation reads it back
+            // rather than recosting, so it has to be written here too.
+            batch.Cost = _summary?.TotalCost;
+
+            foreach (var removedId in _removedUsedIds)
+            {
+                var existing = batch.BatchItems.FirstOrDefault(bi => bi.Id == removedId);
+                if (existing is not null) db.BatchItems.Remove(existing);
+            }
+
+            foreach (var removedId in _removedLossIds)
+            {
+                var existing = batch.BatchLossItems.FirstOrDefault(bli => bli.Id == removedId);
+                if (existing is not null) db.BatchLossItems.Remove(existing);
+            }
+
+            foreach (var line in _usedLines)
+            {
+                var target = line.EntityId == 0
+                    ? null
+                    : batch.BatchItems.FirstOrDefault(bi => bi.Id == line.EntityId);
+
+                if (target is null)
+                {
+                    target = new BatchItem();
+                    batch.BatchItems.Add(target);
+                }
+
+                target.InventoryItemId = line.InventoryItemId;
+                target.Quantity = line.Quantity;
+                target.UnitOfMeasureId = line.UnitOfMeasureId;
+            }
+
+            foreach (var line in _lossLines)
+            {
+                var target = line.EntityId == 0
+                    ? null
+                    : batch.BatchLossItems.FirstOrDefault(bli => bli.Id == line.EntityId);
+
+                if (target is null)
+                {
+                    target = new BatchLossItem();
+                    batch.BatchLossItems.Add(target);
+                }
+
+                target.InventoryItemId = line.InventoryItemId;
+                target.Quantity = line.Quantity;
+                target.UnitOfMeasureId = line.UnitOfMeasureId;
+            }
+
+            await db.SaveChangesAsync();
+
+            Snackbar.Add("Batch saved.", Severity.Success);
+            if (Id is null)
+            {
+                Nav.NavigateTo($"/batches/{batch.Id}");
+            }
+            else
+            {
+                // Navigating to the URL we are already on does nothing, so the
+                // in-memory lines would keep their placeholder ids and be inserted
+                // again on the next save. Reload from the database instead.
+                await LoadAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not save: {ex.InnerException?.Message ?? ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.Message, "Delete this batch and its lines? Product and inventory totals will change." },
+        };
+
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Delete batch", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var batch = await db.Batches
+                .Include(b => b.BatchItems)
+                .Include(b => b.BatchLossItems)
+                .SingleAsync(b => b.Id == Id);
+
+            db.BatchItems.RemoveRange(batch.BatchItems);
+            db.BatchLossItems.RemoveRange(batch.BatchLossItems);
+            db.Batches.Remove(batch);
+            await db.SaveChangesAsync();
+
+            Snackbar.Add("Batch deleted.", Severity.Success);
+            Nav.NavigateTo("/batches");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not delete: {ex.InnerException?.Message ?? ex.Message}", Severity.Error);
+        }
+    }
+}

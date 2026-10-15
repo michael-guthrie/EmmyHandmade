@@ -1,0 +1,110 @@
+@page "/batches"
+@inject IDbContextFactory<TrackingStore> DbFactory
+@inject NavigationManager Nav
+
+@* Port of the WPF BatchHistory window. *@
+
+<PageTitle>Batch History</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+    <MudText Typo="Typo.h4">Batch History</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+               Href="/batches/new">Add Batch</MudButton>
+</MudStack>
+
+@if (_rows is null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else
+{
+    <MudTable Items="_rows" Hover="true" Dense="true" Striped="true" Breakpoint="Breakpoint.Sm"
+              Filter="FilterRow" OnRowClick="@((TableRowClickEventArgs<BatchRow> e) => Open(e.Item))"
+              RowClass="cursor-pointer">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Total cost: @_rows.Sum(r => r.Cost ?? 0M).ToString("C2")</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_search" Placeholder="Search product or description"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Class="mt-0" Immediate="true" Clearable="true" />
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>
+                <MudTableSortLabel InitialDirection="SortDirection.Descending"
+                                   SortBy="new Func<BatchRow, object>(r => r.BatchDate)">Date</MudTableSortLabel>
+            </MudTh>
+            <MudTh>
+                <MudTableSortLabel SortBy="new Func<BatchRow, object>(r => r.ProductName)">Product</MudTableSortLabel>
+            </MudTh>
+            <MudTh>Description</MudTh>
+            <MudTh Style="text-align:right">
+                <MudTableSortLabel SortBy="new Func<BatchRow, object>(r => r.UnitsProduced ?? 0M)">Units</MudTableSortLabel>
+            </MudTh>
+            <MudTh Style="text-align:right">
+                <MudTableSortLabel SortBy="new Func<BatchRow, object>(r => r.Cost ?? 0M)">Cost</MudTableSortLabel>
+            </MudTh>
+            <MudTh Style="text-align:right">Cost / Unit</MudTh>
+            <MudTh Style="width:48px"></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Date">@context.BatchDate.ToShortDateString()</MudTd>
+            <MudTd DataLabel="Product">@context.ProductName</MudTd>
+            <MudTd DataLabel="Description">@context.Description</MudTd>
+            <MudTd DataLabel="Units" Class="quarter-figure" Style="text-align:right">
+                @(context.UnitsProduced?.ToString("0.0####") ?? "—")
+            </MudTd>
+            <MudTd DataLabel="Cost" Class="quarter-figure" Style="text-align:right">
+                @(context.Cost?.ToString("C2") ?? "—")
+            </MudTd>
+            <MudTd DataLabel="Cost / Unit" Class="quarter-figure" Style="text-align:right">
+                @(context.CostPerUnit?.ToString("C4") ?? "—")
+            </MudTd>
+            <MudTd>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                               OnClick="@(() => Open(context))" />
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager PageSizeOptions="new[] { 25, 50, 100, int.MaxValue }" />
+        </PagerContent>
+    </MudTable>
+}
+
+@code {
+    private sealed record BatchRow(
+        int Id, DateTime BatchDate, string ProductName, string? Description,
+        decimal? UnitsProduced, decimal? Cost)
+    {
+        public decimal? CostPerUnit =>
+            (Cost is { } c && UnitsProduced is { } u && u != 0M) ? c / u : null;
+    }
+
+    private List<BatchRow>? _rows;
+    private string _search = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        _rows = await db.Batches.AsNoTracking()
+            .OrderByDescending(b => b.BatchDate)
+            .Select(b => new BatchRow(
+                b.Id,
+                b.BatchDate,
+                b.Product!.Name,
+                b.Description,
+                b.UnitsProduced,
+                b.Cost))
+            .ToListAsync();
+    }
+
+    private bool FilterRow(BatchRow row) =>
+        string.IsNullOrWhiteSpace(_search)
+        || row.ProductName.Contains(_search, StringComparison.OrdinalIgnoreCase)
+        || (row.Description?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false);
+
+    private void Open(BatchRow? row)
+    {
+        if (row is not null) Nav.NavigateTo($"/batches/{row.Id}");
+    }
+}

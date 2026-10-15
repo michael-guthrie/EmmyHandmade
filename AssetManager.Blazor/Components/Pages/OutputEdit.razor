@@ -1,0 +1,394 @@
+@page "/output/new"
+@page "/output/{Id:int}"
+@inject IDbContextFactory<TrackingStore> DbFactory
+@inject LookupService Lookups
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager Nav
+
+@* Port of the WPF ModifyOutput window: one record covering materials and/or finished products
+   leaving inventory, with the sale amount. *@
+
+<PageTitle>@Title</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+    <MudText Typo="Typo.h4">@Title</MudText>
+    <MudStack Row="true" Spacing="2">
+        @if (Id is not null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                       StartIcon="@Icons.Material.Filled.Delete" OnClick="DeleteAsync">Delete</MudButton>
+        }
+        <MudButton Variant="Variant.Outlined" Href="/output">Close</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="@(_saving || _loading)" OnClick="SaveAsync">Save</MudButton>
+    </MudStack>
+</MudStack>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else if (_notFound)
+{
+    <MudAlert Severity="Severity.Error">That output record no longer exists.</MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <MudGrid>
+            <MudItem xs="12" md="3">
+                <MudDatePicker @bind-Date="_date" Label="Date" Variant="Variant.Outlined"
+                               Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_description" Label="Description" MaxLength="500"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" />
+            </MudItem>
+            <MudItem xs="12" md="3">
+                <MudNumericField T="decimal" @bind-Value="_totalSale" Label="Total sale" Format="0.00####"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+                <MudText Typo="Typo.caption">Leave at zero for a loss or giveaway.</MudText>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+            <MudText Typo="Typo.h6">Materials</MudText>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AddMaterial">Add Material</MudButton>
+        </MudStack>
+
+        @if (_materials.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="my-3">No raw materials on this record.</MudText>
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto">
+                <thead>
+                    <tr>
+                        <th style="min-width:220px">Item</th>
+                        <th style="min-width:140px">Quantity</th>
+                        <th>Units</th>
+                        <th style="width:48px"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _materials)
+                    {
+                        <tr @key="line.Key">
+                            <td>
+                                <MudSelect T="int" @bind-Value="line.InventoryItemId" Margin="Margin.Dense"
+                                           Variant="Variant.Text" Dense="true">
+                                    <MudSelectItem T="int" Value="0">(select an item)</MudSelectItem>
+                                    @foreach (var item in _lookups.Items)
+                                    {
+                                        <MudSelectItem T="int" Value="@item.Id">@item.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </td>
+                            <td>
+                                <MudNumericField T="decimal" @bind-Value="line.Quantity" Margin="Margin.Dense"
+                                                 Variant="Variant.Text" Format="0.0#####" HideSpinButtons="true" />
+                            </td>
+                            <td>
+                                @* Direct material output always uses the item's own tracking unit. *@
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                    @_lookups.ItemUnitName(line.InventoryItemId)
+                                </MudText>
+                            </td>
+                            <td>
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                               Size="Size.Small" OnClick="@(() => _materials.Remove(line))" />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </MudPaper>
+
+    <MudPaper Class="pa-4" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+            <MudText Typo="Typo.h6">Products</MudText>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="AddProduct">Add Product</MudButton>
+        </MudStack>
+
+        @if (_products.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="my-3">No finished products on this record.</MudText>
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto">
+                <thead>
+                    <tr>
+                        <th style="min-width:220px">Product</th>
+                        <th style="min-width:140px">Quantity</th>
+                        <th style="width:48px"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _products)
+                    {
+                        <tr @key="line.Key">
+                            <td>
+                                <MudSelect T="int" @bind-Value="line.BatchProductId" Margin="Margin.Dense"
+                                           Variant="Variant.Text" Dense="true">
+                                    <MudSelectItem T="int" Value="0">(select a product)</MudSelectItem>
+                                    @foreach (var product in _lookups.Products)
+                                    {
+                                        <MudSelectItem T="int" Value="@product.Id">@product.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </td>
+                            <td>
+                                <MudNumericField T="decimal" @bind-Value="line.Quantity" Margin="Margin.Dense"
+                                                 Variant="Variant.Text" Format="0.0#####" HideSpinButtons="true" />
+                            </td>
+                            <td>
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                               Size="Size.Small" OnClick="@(() => _products.Remove(line))" />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private sealed class MaterialLine
+    {
+        public int Key { get; init; }
+        public int InventoryItemId { get; set; }
+        public decimal Quantity { get; set; }
+    }
+
+    private sealed class ProductLine
+    {
+        public int Key { get; init; }
+        public int BatchProductId { get; set; }
+        public decimal Quantity { get; set; }
+    }
+
+    private readonly List<MaterialLine> _materials = new();
+    private readonly List<ProductLine> _products = new();
+    private LookupSet _lookups = new(Array.Empty<ItemLookup>(), Array.Empty<ProductLookup>(), Array.Empty<UnitLookup>());
+
+    private DateTime? _date = DateTime.Today;
+    private string? _description;
+    private decimal _totalSale;
+
+    private int _nextKey = 1;
+    private bool _loading = true;
+    private bool _saving;
+    private bool _notFound;
+
+    private string Title => Id is null ? "Add Sale / Loss / Other Output" : "View / Edit Output Record";
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _notFound = false;
+        _materials.Clear();
+        _products.Clear();
+
+        _lookups = await Lookups.GetAllAsync();
+
+        if (Id is null)
+        {
+            _date = DateTime.Now;
+            _description = null;
+            _totalSale = 0M;
+        }
+        else
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var record = await db.OutRecords.AsNoTracking()
+                .Include(o => o.Materials)
+                .Include(o => o.Products)
+                .SingleOrDefaultAsync(o => o.Id == Id);
+
+            if (record is null)
+            {
+                _notFound = true;
+                _loading = false;
+                return;
+            }
+
+            _date = record.Date;
+            _description = record.Description;
+            _totalSale = record.TotalSale;
+
+            foreach (var m in record.Materials)
+            {
+                _materials.Add(new MaterialLine
+                {
+                    Key = _nextKey++,
+                    InventoryItemId = m.InventoryItemId,
+                    Quantity = m.Quantity,
+                });
+            }
+
+            foreach (var p in record.Products)
+            {
+                _products.Add(new ProductLine
+                {
+                    Key = _nextKey++,
+                    BatchProductId = p.BatchProductId,
+                    Quantity = p.Quantity,
+                });
+            }
+        }
+
+        _loading = false;
+    }
+
+    private void AddMaterial() => _materials.Add(new MaterialLine { Key = _nextKey++ });
+
+    private void AddProduct() => _products.Add(new ProductLine { Key = _nextKey++ });
+
+    private async Task SaveAsync()
+    {
+        if (_materials.Any(m => m.InventoryItemId == 0) || _products.Any(p => p.BatchProductId == 0))
+        {
+            Snackbar.Add("Every line needs an item or product selected.", Severity.Error);
+            return;
+        }
+
+        // These tables are keyed on (record, item), so the same item cannot appear twice on one
+        // record. Caught here rather than as a primary-key violation from the database.
+        if (_materials.Select(m => m.InventoryItemId).Distinct().Count() != _materials.Count)
+        {
+            Snackbar.Add("The same material is listed more than once. Combine the quantities.", Severity.Error);
+            return;
+        }
+
+        if (_products.Select(p => p.BatchProductId).Distinct().Count() != _products.Count)
+        {
+            Snackbar.Add("The same product is listed more than once. Combine the quantities.", Severity.Error);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            OutRecord record;
+            if (Id is null)
+            {
+                record = new OutRecord();
+                db.OutRecords.Add(record);
+            }
+            else
+            {
+                record = await db.OutRecords
+                    .Include(o => o.Materials)
+                    .Include(o => o.Products)
+                    .SingleAsync(o => o.Id == Id);
+            }
+
+            record.Date = _date ?? DateTime.Today;
+            record.Description = _description;
+            record.TotalSale = _totalSale;
+
+            // Composite keys make the item id the line's identity, so lines are reconciled by it.
+            var keptItemIds = _materials.Select(m => m.InventoryItemId).ToHashSet();
+            foreach (var existing in record.Materials.Where(m => !keptItemIds.Contains(m.InventoryItemId)).ToList())
+            {
+                record.Materials.Remove(existing);
+                db.OutRecordMaterials.Remove(existing);
+            }
+
+            foreach (var line in _materials)
+            {
+                var target = record.Materials.FirstOrDefault(m => m.InventoryItemId == line.InventoryItemId);
+                if (target is null)
+                {
+                    target = new OutRecordMaterial { InventoryItemId = line.InventoryItemId };
+                    record.Materials.Add(target);
+                }
+                target.Quantity = line.Quantity;
+            }
+
+            var keptProductIds = _products.Select(p => p.BatchProductId).ToHashSet();
+            foreach (var existing in record.Products.Where(p => !keptProductIds.Contains(p.BatchProductId)).ToList())
+            {
+                record.Products.Remove(existing);
+                db.OutRecordProducts.Remove(existing);
+            }
+
+            foreach (var line in _products)
+            {
+                var target = record.Products.FirstOrDefault(p => p.BatchProductId == line.BatchProductId);
+                if (target is null)
+                {
+                    target = new OutRecordProduct { BatchProductId = line.BatchProductId };
+                    record.Products.Add(target);
+                }
+                target.Quantity = line.Quantity;
+            }
+
+            await db.SaveChangesAsync();
+
+            Snackbar.Add("Output record saved.", Severity.Success);
+            if (Id is null)
+            {
+                Nav.NavigateTo($"/output/{record.Id}");
+            }
+            else
+            {
+                // Navigating to the URL we are already on does nothing, so the
+                // in-memory lines would keep their placeholder ids and be inserted
+                // again on the next save. Reload from the database instead.
+                await LoadAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not save: {ex.InnerException?.Message ?? ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.Message, "Delete this output record? Inventory and product totals will change." },
+        };
+
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Delete output record", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var record = await db.OutRecords.SingleAsync(o => o.Id == Id);
+            // Lines cascade with the record.
+            db.OutRecords.Remove(record);
+            await db.SaveChangesAsync();
+
+            Snackbar.Add("Output record deleted.", Severity.Success);
+            Nav.NavigateTo("/output");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not delete: {ex.InnerException?.Message ?? ex.Message}", Severity.Error);
+        }
+    }
+}

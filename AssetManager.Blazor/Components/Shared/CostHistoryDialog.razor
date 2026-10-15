@@ -1,0 +1,65 @@
+@* Port of the WPF ItemHistory user control, which appeared as expandable row details under each
+   batch line. Shows which purchase lots a line's cost was drawn from. *@
+
+<MudDialog>
+    <DialogContent>
+        @if (History is null || History.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true">
+                No cost history. Either the line has no quantity yet, or purchases on record did not
+                cover it.
+            </MudAlert>
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="min-width:720px">
+                <thead>
+                    <tr>
+                        <th style="text-align:right">Used Adjusted Units</th>
+                        <th style="text-align:right">Adjusted Price / Unit</th>
+                        <th style="text-align:right">Extended</th>
+                        <th>Source</th>
+                        <th>Order Date</th>
+                        <th>Receipt Date</th>
+                        <th>Unit</th>
+                        <th style="text-align:right">Price / Unit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var entry in History)
+                    {
+                        <tr>
+                            <td class="quarter-figure" style="text-align:right">@entry.AdjustedQuantity.ToString("N2")</td>
+                            <td class="quarter-figure" style="text-align:right">@entry.AdjustedUnitPrice.ToString("N2")</td>
+                            <td class="quarter-figure" style="text-align:right">@entry.ExtendedCost.ToString("N2")</td>
+                            <td>@entry.OrderItem.Order?.Source</td>
+                            <td>@entry.OrderItem.Order?.DatePlaced.ToShortDateString()</td>
+                            <td>@(entry.OrderItem.Order?.DateReceived?.ToShortDateString() ?? "—")</td>
+                            <td>@entry.OrderItem.UnitOfMeasure?.Name</td>
+                            <td class="quarter-figure" style="text-align:right">@entry.OrderItem.UnitPrice.ToString("N2")</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th style="text-align:right">@History.Sum(h => h.AdjustedQuantity).ToString("N2")</th>
+                        <th></th>
+                        <th style="text-align:right">@History.Sum(h => h.ExtendedCost).ToString("N2")</th>
+                        <th colspan="5"></th>
+                    </tr>
+                </tfoot>
+            </MudSimpleTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public IReadOnlyList<CostHistoryEntry>? History { get; set; }
+
+    private void Close() => MudDialog.Close();
+}

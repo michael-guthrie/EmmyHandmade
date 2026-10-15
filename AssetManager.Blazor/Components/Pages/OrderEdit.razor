@@ -1,0 +1,384 @@
+@page "/orders/new"
+@page "/orders/{Id:int}"
+@inject IDbContextFactory<TrackingStore> DbFactory
+@inject LookupService Lookups
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager Nav
+
+@* Port of the WPF ModifyOrder window, used for both Add Order and View / Edit Order. *@
+
+<PageTitle>@Title</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+    <MudText Typo="Typo.h4">@Title</MudText>
+    <MudStack Row="true" Spacing="2">
+        @if (Id is not null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                       StartIcon="@Icons.Material.Filled.Delete" OnClick="DeleteAsync">Delete</MudButton>
+        }
+        <MudButton Variant="Variant.Outlined" Href="/orders">Close</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="@(_saving || _loading)" OnClick="SaveAsync">Save</MudButton>
+    </MudStack>
+</MudStack>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else if (_notFound)
+{
+    <MudAlert Severity="Severity.Error">That order no longer exists.</MudAlert>
+}
+else
+{
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudTextField @bind-Value="_order.Source" Label="Source" MaxLength="50"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" />
+                <MudTextField @bind-Value="_order.OrderNumber" Label="Order number" MaxLength="50"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" />
+                <MudTextField @bind-Value="_order.Link" Label="Link" MaxLength="500"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" />
+                @if (!string.IsNullOrWhiteSpace(_order.Link))
+                {
+                    <MudLink Href="@_order.Link" Target="_blank" Typo="Typo.body2">Open link</MudLink>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudDatePicker @bind-Date="_datePlaced" Label="Date placed" Variant="Variant.Outlined"
+                               Margin="Margin.Dense" Class="mb-3" />
+                <MudDatePicker @bind-Date="_dateReceived" Label="Date received" Variant="Variant.Outlined"
+                               Margin="Margin.Dense" Clearable="true" Class="mb-1" />
+                <MudText Typo="Typo.caption" Class="mb-3 d-block">
+                    Stock and value only count once an order is marked received.
+                </MudText>
+
+                <MudStack Row="true" Spacing="2">
+                    <MudNumericField T="decimal?" @bind-Value="_order.Tax" Label="Tax" Format="0.00##"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+                    <MudNumericField T="decimal?" @bind-Value="_order.Shipping" Label="Shipping" Format="0.00##"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+                    <MudNumericField T="decimal?" @bind-Value="_order.Discount" Label="Discount" Format="0.00##"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+                    <MudText Typo="Typo.h6">Items</MudText>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Add" OnClick="AddLine">Add Line</MudButton>
+                </MudStack>
+
+                @if (_lines.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="my-3">No items on this order yet.</MudText>
+                }
+                else
+                {
+                    <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x:auto">
+                        <thead>
+                            <tr>
+                                <th style="min-width:200px">Item</th>
+                                <th style="min-width:130px">Quantity</th>
+                                <th style="min-width:110px">Units</th>
+                                <th style="text-align:center">Default</th>
+                                <th style="min-width:130px">Price / Unit</th>
+                                <th style="min-width:130px">Cost</th>
+                                <th style="width:48px"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var line in _lines)
+                            {
+                                <tr @key="line">
+                                    <td>
+                                        <MudSelect T="int" Value="line.InventoryItemId"
+                                                   ValueChanged="@(v => OnItemChanged(line, v))"
+                                                   Margin="Margin.Dense" Variant="Variant.Text" Dense="true">
+                                            <MudSelectItem T="int" Value="0">(select an item)</MudSelectItem>
+                                            @foreach (var item in _lookups.Items)
+                                            {
+                                                <MudSelectItem T="int" Value="@item.Id">@item.Name</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </td>
+                                    <td>
+                                        <MudNumericField T="decimal" @bind-Value="line.Quantity" Margin="Margin.Dense"
+                                                         Variant="Variant.Text" Format="0.0#####" HideSpinButtons="true" />
+                                    </td>
+                                    <td>
+                                        <MudSelect T="int" @bind-Value="line.UnitOfMeasureId" Margin="Margin.Dense"
+                                                   Variant="Variant.Text" Dense="true">
+                                            @foreach (var unit in _lookups.Units)
+                                            {
+                                                <MudSelectItem T="int" Value="@unit.Id">@unit.Name</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </td>
+                                    <td style="text-align:center">
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                            @_lookups.ItemUnitName(line.InventoryItemId)
+                                        </MudText>
+                                    </td>
+                                    <td>
+                                        <MudNumericField T="decimal" @bind-Value="line.UnitPrice" Margin="Margin.Dense"
+                                                         Variant="Variant.Text" Format="0.00####" HideSpinButtons="true" />
+                                    </td>
+                                    <td>
+                                        @* Editing the extended cost back-solves the unit price, as the WPF grid did. *@
+                                        <MudNumericField T="decimal" Value="line.Cost"
+                                                         ValueChanged="@(v => line.SetCost(v))"
+                                                         Margin="Margin.Dense" Variant="Variant.Text"
+                                                         Format="0.00####" HideSpinButtons="true" />
+                                    </td>
+                                    <td>
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                                       Size="Size.Small" OnClick="@(() => RemoveLine(line))" />
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+
+                <MudDivider Class="my-3" />
+
+                <MudStack Row="true" Spacing="6" Justify="Justify.FlexEnd">
+                    <MudText Typo="Typo.body1">
+                        Items: <strong class="quarter-figure">@_lines.Sum(l => l.Cost).ToString("C2")</strong>
+                    </MudText>
+                    <MudText Typo="Typo.h6">
+                        Total: <strong class="quarter-figure">@(TotalCost?.ToString("C2") ?? "—")</strong>
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private sealed class LineModel
+    {
+        public int Id { get; init; }
+        public int InventoryItemId { get; set; }
+        public decimal Quantity { get; set; }
+        public int UnitOfMeasureId { get; set; }
+        public decimal UnitPrice { get; set; }
+
+        public decimal Cost => Quantity * UnitPrice;
+
+        /// <summary>Back-solves the unit price from an edited extended cost.</summary>
+        public void SetCost(decimal value) => UnitPrice = Quantity != 0M ? value / Quantity : 0M;
+    }
+
+    private Order _order = new();
+    private List<LineModel> _lines = new();
+    private readonly List<int> _removedLineIds = new();
+    private LookupSet _lookups = new(Array.Empty<ItemLookup>(), Array.Empty<ProductLookup>(), Array.Empty<UnitLookup>());
+
+    private DateTime? _datePlaced = DateTime.Today;
+    private DateTime? _dateReceived;
+
+    private bool _loading = true;
+    private bool _saving;
+    private bool _notFound;
+
+    private string Title => Id is null ? "Add Order" : "View / Edit Order";
+
+    /// <summary>
+    /// Null only when there is nothing at all to total, matching the WPF behaviour of showing a
+    /// blank rather than 0.00 on an untouched order.
+    /// </summary>
+    private decimal? TotalCost =>
+        (_lines.Count > 0 || _order.Shipping.HasValue || _order.Tax.HasValue || _order.Discount.HasValue)
+            ? _lines.Sum(l => l.Cost) + (_order.Shipping ?? 0M) + (_order.Tax ?? 0M) - (_order.Discount ?? 0M)
+            : null;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _notFound = false;
+        _removedLineIds.Clear();
+
+        _lookups = await Lookups.GetAllAsync();
+
+        if (Id is null)
+        {
+            _order = new Order { DatePlaced = DateTime.Now };
+            _datePlaced = _order.DatePlaced;
+            _dateReceived = null;
+            _lines = new List<LineModel>();
+        }
+        else
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var order = await db.Orders.AsNoTracking()
+                .Include(o => o.OrderItems)
+                .SingleOrDefaultAsync(o => o.Id == Id);
+
+            if (order is null)
+            {
+                _notFound = true;
+                _loading = false;
+                return;
+            }
+
+            _order = order;
+            _datePlaced = order.DatePlaced;
+            _dateReceived = order.DateReceived;
+            _lines = order.OrderItems
+                .Select(oi => new LineModel
+                {
+                    Id = oi.Id,
+                    InventoryItemId = oi.InventoryItemId,
+                    Quantity = oi.Quantity,
+                    UnitOfMeasureId = oi.UnitOfMeasureId,
+                    UnitPrice = oi.UnitPrice,
+                })
+                .ToList();
+        }
+
+        _loading = false;
+    }
+
+    private void AddLine()
+    {
+        // Default units to ounces by weight until an item is picked, as the WPF grid did.
+        _lines.Add(new LineModel { UnitOfMeasureId = 102 });
+    }
+
+    private void RemoveLine(LineModel line)
+    {
+        _lines.Remove(line);
+        if (line.Id != 0) _removedLineIds.Add(line.Id);
+    }
+
+    /// <summary>Picking an item switches the line to that item's own tracking unit.</summary>
+    private void OnItemChanged(LineModel line, int itemId)
+    {
+        line.InventoryItemId = itemId;
+        var item = _lookups.FindItem(itemId);
+        if (item is not null) line.UnitOfMeasureId = item.UnitOfMeasureId;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_lines.Any(l => l.InventoryItemId == 0))
+        {
+            Snackbar.Add("Every line needs an item selected.", Severity.Error);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            Order order;
+            if (Id is null)
+            {
+                order = new Order();
+                db.Orders.Add(order);
+            }
+            else
+            {
+                order = await db.Orders.Include(o => o.OrderItems).SingleAsync(o => o.Id == Id);
+            }
+
+            order.Source = _order.Source;
+            order.OrderNumber = _order.OrderNumber;
+            order.Link = _order.Link;
+            order.Tax = _order.Tax;
+            order.Shipping = _order.Shipping;
+            order.Discount = _order.Discount;
+            order.DatePlaced = _datePlaced ?? DateTime.Today;
+            order.DateReceived = _dateReceived;
+
+            foreach (var removedId in _removedLineIds)
+            {
+                var existing = order.OrderItems.FirstOrDefault(oi => oi.Id == removedId);
+                if (existing is not null) db.OrderItems.Remove(existing);
+            }
+
+            foreach (var line in _lines)
+            {
+                var target = line.Id == 0 ? null : order.OrderItems.FirstOrDefault(oi => oi.Id == line.Id);
+                if (target is null)
+                {
+                    target = new OrderItem();
+                    order.OrderItems.Add(target);
+                }
+
+                target.InventoryItemId = line.InventoryItemId;
+                target.Quantity = line.Quantity;
+                target.UnitOfMeasureId = line.UnitOfMeasureId;
+                target.UnitPrice = line.UnitPrice;
+            }
+
+            await db.SaveChangesAsync();
+
+            Snackbar.Add("Order saved.", Severity.Success);
+            if (Id is null)
+            {
+                Nav.NavigateTo($"/orders/{order.Id}");
+            }
+            else
+            {
+                // Navigating to the URL we are already on does nothing, so the
+                // in-memory lines would keep their placeholder ids and be inserted
+                // again on the next save. Reload from the database instead.
+                await LoadAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not save: {ex.InnerException?.Message ?? ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.Message, "Delete this order and all of its lines? Inventory levels and costs will change." },
+        };
+
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Delete order", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var order = await db.Orders.Include(o => o.OrderItems).SingleAsync(o => o.Id == Id);
+            db.OrderItems.RemoveRange(order.OrderItems);
+            db.Orders.Remove(order);
+            await db.SaveChangesAsync();
+
+            Snackbar.Add("Order deleted.", Severity.Success);
+            Nav.NavigateTo("/orders");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not delete: {ex.InnerException?.Message ?? ex.Message}", Severity.Error);
+        }
+    }
+}
